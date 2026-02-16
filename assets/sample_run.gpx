@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Flyover Test"
+  xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Sample Morning Run</name>
+    <time>2026-02-15T06:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Morning Run - Central Park Loop</name>
+    <trkseg>
+      <trkpt lat="-6.17510" lon="106.82710">
+        <ele>10.0</ele>
+        <time>2026-02-15T06:00:00Z</time>
+      </trkpt>
+      <trkpt lat="-6.17520" lon="106.82750">
+        <ele>10.5</ele>
+        <time>2026-02-15T06:00:15Z</time>
+      </trkpt>
+      <trkpt lat="-6.17550" lon="106.82800">
+        <ele>11.0</ele>
+        <time>2026-02-15T06:00:30Z</time>
+      </trkpt>
+      <trkpt lat="-6.17600" lon="106.82850">
+        <ele>11.5</ele>
+        <time>2026-02-15T06:00:45Z</time>
+      </trkpt>
+      <trkpt lat="-6.17650" lon="106.82900">
+        <ele>12.0</ele>
+        <time>2026-02-15T06:01:00Z</time>
+      </trkpt>
+      <trkpt lat="-6.17700" lon="106.82950">
+        <ele>12.5</ele>
+        <time>2026-02-15T06:01:15Z</time>
+      </trkpt>
+      <trkpt lat="-6.17730" lon="106.83000">
+        <ele>13.0</ele>
+        <time>2026-02-15T06:01:30Z</time>
+      </trkpt>
+      <trkpt lat="-6.17750" lon="106.83050">
+        <ele>13.5</ele>
+        <time>2026-02-15T06:01:45Z</time>
+      </trkpt>
+      <trkpt lat="-6.17740" lon="106.83100">
+        <ele>14.0</ele>
+        <time>2026-02-15T06:02:00Z</time>
+      </trkpt>
+      <trkpt lat="-6.17710" lon="106.83140">
+        <ele>14.5</ele>
+        <time>2026-02-15T06:02:15Z</time>
+      </trkpt>
+      <trkpt lat="-6.17670" lon="106.83170">
+        <ele>14.0</ele>
+        <time>2026-02-15T06:02:30Z</time>
+      </trkpt>
+      <trkpt lat="-6.17620" lon="106.83180">
+        <ele>13.5</ele>
+        <time>2026-02-15T06:02:45Z</time>
+      </trkpt>
+      <trkpt lat="-6.17570" lon="106.83170">
+        <ele>13.0</ele>
+        <time>2026-02-15T06:03:00Z</time>
+      </trkpt>
+      <trkpt lat="-6.17530" lon="106.83140">
+        <ele>12.5</ele>
+        <time>2026-02-15T06:03:15Z</time>
+      </trkpt>
+      <trkpt lat="-6.17500" lon="106.83090">
+        <ele>12.0</ele>
+        <time>2026-02-15T06:03:30Z</time>
+      </trkpt>
+      <trkpt lat="-6.17490" lon="106.83030">
+        <ele>11.5</ele>
+        <time>2026-02-15T06:03:45Z</time>
+      </trkpt>
+      <trkpt lat="-6.17500" lon="106.82970">
+        <ele>11.0</ele>
+        <time>2026-02-15T06:04:00Z</time>
+      </trkpt>
+      <trkpt lat="-6.17510" lon="106.82910">
+        <ele>10.5</ele>
+        <time>2026-02-15T06:04:15Z</time>
+      </trkpt>
+      <trkpt lat="-6.17510" lon="106.82850">
+        <ele>10.0</ele>
+        <time>2026-02-15T06:04:30Z</time>
+      </trkpt>
+      <trkpt lat="-6.17510" lon="106.82780">
+        <ele>10.0</ele>
+        <time>2026-02-15T06:04:45Z</time>
+      </trkpt>
+      <trkpt lat="-6.17510" lon="106.82710">
+        <ele>10.0</ele>
+        <time>2026-02-15T06:05:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

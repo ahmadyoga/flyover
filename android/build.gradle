@@ -1,0 +1,39 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = '../build'
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(':app')
+}
+
+// Force consistent JVM 17 for ALL subprojects AFTER everything is evaluated.
+// This resolves mismatches between plugins that hardcode different JVM targets
+// (e.g., mapbox=1.8, receive_sharing_intent=17).
+gradle.projectsEvaluated {
+    subprojects.each { sub ->
+        if (sub.plugins.hasPlugin('com.android.library') || sub.plugins.hasPlugin('com.android.application')) {
+            sub.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
+            }
+        }
+        sub.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+            kotlinOptions {
+                jvmTarget = "17"
+            }
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
