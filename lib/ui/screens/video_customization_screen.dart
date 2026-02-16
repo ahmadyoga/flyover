@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../../core/models/route_data.dart';
@@ -10,8 +12,13 @@ import 'rendering_progress_screen.dart';
 /// Screen where users customize video settings before rendering.
 class VideoCustomizationScreen extends StatefulWidget {
   final RouteData route;
+  final List<String> initialEndingImages;
 
-  const VideoCustomizationScreen({super.key, required this.route});
+  const VideoCustomizationScreen({
+    super.key,
+    required this.route,
+    this.initialEndingImages = const [],
+  });
 
   @override
   State<VideoCustomizationScreen> createState() =>
@@ -19,7 +26,9 @@ class VideoCustomizationScreen extends StatefulWidget {
 }
 
 class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
-  VideoConfig _config = const VideoConfig();
+  late VideoConfig _config = widget.initialEndingImages.isEmpty
+      ? const VideoConfig()
+      : VideoConfig(endingImagePaths: widget.initialEndingImages);
   MapboxMap? _mapboxMap;
 
   // Preview animation
@@ -53,6 +62,10 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
                       const SizedBox(height: 8),
                       _buildMapStyleSelector(),
                       const SizedBox(height: 24),
+                      _buildSectionTitle('Camera'),
+                      const SizedBox(height: 8),
+                      _buildCameraSettings(),
+                      const SizedBox(height: 24),
                       _buildSectionTitle('Route Color'),
                       const SizedBox(height: 8),
                       _buildColorSelector(),
@@ -65,9 +78,9 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
                       const SizedBox(height: 8),
                       _buildDurationSlider(),
                       const SizedBox(height: 24),
-                      _buildSectionTitle('Camera'),
+                      _buildSectionTitle('Ending Images'),
                       const SizedBox(height: 8),
-                      _buildCameraSettings(),
+                      _buildEndingImages(),
                       const SizedBox(height: 32),
                       _buildGenerateButton(),
                       const SizedBox(height: 32),
@@ -174,9 +187,8 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: _isPreviewing
-                        ? AppTheme.primaryColor
-                        : Colors.black54,
+                    color:
+                        _isPreviewing ? AppTheme.primaryColor : Colors.black54,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
@@ -370,8 +382,9 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
                     : AppTheme.surfaceCard,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color:
-                      isSelected ? AppTheme.primaryColor : AppTheme.surfaceElevated,
+                  color: isSelected
+                      ? AppTheme.primaryColor
+                      : AppTheme.surfaceElevated,
                   width: isSelected ? 2 : 1,
                 ),
               ),
@@ -426,14 +439,16 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
             _buildToggleRow(
               'Activity Name',
               _config.showActivityName,
-              (v) => setState(() => _config = _config.copyWith(showActivityName: v)),
+              (v) => setState(
+                  () => _config = _config.copyWith(showActivityName: v)),
               enabled: true,
             ),
             const Divider(color: AppTheme.surfaceElevated, height: 8),
             _buildToggleRow(
               'Distance',
               _config.showDistance,
-              (v) => setState(() => _config = _config.copyWith(showDistance: v)),
+              (v) =>
+                  setState(() => _config = _config.copyWith(showDistance: v)),
               enabled: true,
             ),
             const Divider(color: AppTheme.surfaceElevated, height: 8),
@@ -448,10 +463,57 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
             _buildToggleRow(
               'Elevation',
               _config.showElevation,
-              (v) => setState(() => _config = _config.copyWith(showElevation: v)),
+              (v) =>
+                  setState(() => _config = _config.copyWith(showElevation: v)),
               enabled: widget.route.hasElevation,
               disabledHint: 'No elevation data in GPX',
             ),
+            const Divider(color: AppTheme.surfaceElevated, height: 8),
+            _buildToggleRow(
+              'Speed',
+              _config.showSpeed,
+              (v) => setState(() => _config = _config.copyWith(showSpeed: v)),
+              enabled: true,
+            ),
+            if (_config.showSpeed) ...[
+              const Divider(color: AppTheme.surfaceElevated, height: 8),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Format',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 14,
+                      ),
+                    ),
+                    const Spacer(),
+                    SegmentedButton<SpeedFormat>(
+                      segments: const [
+                        ButtonSegment(
+                          value: SpeedFormat.kmh,
+                          label: Text('km/h'),
+                        ),
+                        ButtonSegment(
+                          value: SpeedFormat.minPerKm,
+                          label: Text('min/km'),
+                        ),
+                      ],
+                      selected: {_config.speedFormat},
+                      onSelectionChanged: (v) => setState(
+                        () => _config = _config.copyWith(speedFormat: v.first),
+                      ),
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -475,7 +537,9 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
               Text(
                 label,
                 style: TextStyle(
-                  color: enabled ? AppTheme.textPrimary : AppTheme.textSecondary.withValues(alpha: 0.5),
+                  color: enabled
+                      ? AppTheme.textPrimary
+                      : AppTheme.textSecondary.withValues(alpha: 0.5),
                   fontSize: 14,
                 ),
               ),
@@ -501,10 +565,16 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
 
   IconData _getMapStyleIcon(MapStyle style) {
     return switch (style) {
-      MapStyle.dark => Icons.dark_mode_rounded,
-      MapStyle.light => Icons.light_mode_rounded,
-      MapStyle.satellite => Icons.satellite_alt_rounded,
+      MapStyle.standard => Icons.map_rounded,
+      MapStyle.standardSatellite => Icons.satellite_rounded,
+      MapStyle.streets => Icons.location_city_rounded,
       MapStyle.outdoors => Icons.landscape_rounded,
+      MapStyle.light => Icons.light_mode_rounded,
+      MapStyle.dark => Icons.dark_mode_rounded,
+      MapStyle.satellite => Icons.satellite_alt_rounded,
+      MapStyle.satelliteStreets => Icons.layers_rounded,
+      MapStyle.navigationDay => Icons.navigation_rounded,
+      MapStyle.navigationNight => Icons.nightlight_rounded,
     };
   }
 
@@ -573,7 +643,8 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Duration', style: TextStyle(color: AppTheme.textSecondary)),
+              const Text('Duration',
+                  style: TextStyle(color: AppTheme.textSecondary)),
               Text(
                 label.trim(),
                 style: const TextStyle(
@@ -598,8 +669,12 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('10s', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-              Text('2min', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+              Text('10s',
+                  style:
+                      TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+              Text('2min',
+                  style:
+                      TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
             ],
           ),
         ],
@@ -710,6 +785,120 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildEndingImages() {
+    final paths = _config.endingImagePaths;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceCard,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (paths.isNotEmpty) ...[
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: paths.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) => _buildImageThumbnail(paths[i], i),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: paths.length >= 5 ? null : _pickEndingImages,
+              icon: const Icon(Icons.add_photo_alternate_rounded, size: 20),
+              label: Text(
+                paths.isEmpty ? 'Add Images' : 'Add More (${paths.length}/5)',
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(
+                  color: paths.length >= 5
+                      ? Colors.grey.shade700
+                      : AppTheme.primaryColor,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageThumbnail(String path, int index) {
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.file(
+            File(path),
+            width: 80,
+            height: 100,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              width: 80,
+              height: 100,
+              color: Colors.grey.shade800,
+              child: const Icon(Icons.broken_image, color: Colors.grey),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: GestureDetector(
+            onTap: () {
+              final updated = List<String>.from(_config.endingImagePaths)
+                ..removeAt(index);
+              setState(
+                () => _config = _config.copyWith(endingImagePaths: updated),
+              );
+            },
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                shape: BoxShape.circle,
+              ),
+              padding: const EdgeInsets.all(4),
+              child: const Icon(Icons.close, size: 14, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickEndingImages() async {
+    final remaining = 5 - _config.endingImagePaths.length;
+    if (remaining <= 0) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: true,
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      final newPaths = result.files
+          .where((f) => f.path != null)
+          .map((f) => f.path!)
+          .take(remaining)
+          .toList();
+      final updated = [..._config.endingImagePaths, ...newPaths];
+      setState(
+        () => _config = _config.copyWith(endingImagePaths: updated),
+      );
+    }
   }
 
   @override

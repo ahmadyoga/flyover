@@ -6,11 +6,16 @@ class RoutePoint {
   final double? elevation;
   final DateTime? timestamp;
 
+  /// True if this point is immediately after a Strava pause/resume.
+  /// Used to skip pause gaps in speed calculations.
+  final bool isPauseResume;
+
   const RoutePoint({
     required this.lat,
     required this.lng,
     this.elevation,
     this.timestamp,
+    this.isPauseResume = false,
   });
 
   /// Calculate distance in meters to another point using Haversine formula
@@ -44,14 +49,16 @@ class RoutePoint {
                   .round(),
             )
           : null,
+      // Propagate pause flag — interpolated points between a normal point
+      // and a pause-resume point inherit the flag.
+      isPauseResume: other.isPauseResume,
     );
   }
 
   static double _toRadians(double degrees) => degrees * pi / 180;
 
   @override
-  String toString() =>
-      'RoutePoint(lat: $lat, lng: $lng, elev: $elevation)';
+  String toString() => 'RoutePoint(lat: $lat, lng: $lng, elev: $elevation)';
 
   @override
   bool operator ==(Object other) =>

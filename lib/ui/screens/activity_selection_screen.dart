@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../features/gpx_import/gpx_import_bloc.dart';
+import '../../features/strava/strava_auth_service.dart';
 import '../../core/models/route_data.dart';
 import '../../ui/theme/app_theme.dart';
 import 'video_customization_screen.dart';
@@ -13,61 +14,85 @@ class ActivitySelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppTheme.surfaceGradient),
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context),
-              Expanded(
-                child: BlocConsumer<GpxImportBloc, GpxImportState>(
-                  listener: (context, state) {
-                    if (state.error != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              const Icon(Icons.error_outline,
-                                  color: AppTheme.errorColor),
-                              const SizedBox(width: 12),
-                              Expanded(child: Text(state.error!)),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  builder: (context, state) {
-                    if (state.isLoading) {
-                      return const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('Importing GPX file...',
-                                style: TextStyle(
-                                    color: AppTheme.textSecondary)),
-                          ],
-                        ),
-                      );
-                    }
-
-                    if (state.routes.isEmpty) {
-                      return _buildEmptyState(context);
-                    }
-
-                    return _buildRouteList(context, state.routes);
-                  },
+    return BlocListener<GpxImportBloc, GpxImportState>(
+      listenWhen: (prev, curr) =>
+          curr.pendingSharedImagePath != null &&
+          prev.pendingSharedImagePath != curr.pendingSharedImagePath,
+      listener: (context, state) {
+        // Auto-navigate when Strava import with shared image completes
+        final imagePath = state.pendingSharedImagePath;
+        final route = state.routes.lastOrNull;
+        if (imagePath != null && route != null) {
+          context.read<GpxImportBloc>().add(ClearPendingSharedImage());
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => BlocProvider.value(
+                value: context.read<GpxImportBloc>(),
+                child: VideoCustomizationScreen(
+                  route: route,
+                  initialEndingImages: [imagePath],
                 ),
               ),
-            ],
+            ),
+          );
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(gradient: AppTheme.surfaceGradient),
+          child: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context),
+                Expanded(
+                  child: BlocConsumer<GpxImportBloc, GpxImportState>(
+                    listener: (context, state) {
+                      if (state.error != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Row(
+                              children: [
+                                const Icon(Icons.error_outline,
+                                    color: AppTheme.errorColor),
+                                const SizedBox(width: 12),
+                                Expanded(child: Text(state.error!)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    builder: (context, state) {
+                      if (state.isLoading) {
+                        return const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('Importing activity...',
+                                  style:
+                                      TextStyle(color: AppTheme.textSecondary)),
+                            ],
+                          ),
+                        );
+                      }
+
+                      if (state.routes.isEmpty) {
+                        return _buildEmptyState(context);
+                      }
+
+                      return _buildRouteList(context, state.routes);
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+        floatingActionButton: _buildFAB(context),
       ),
-      floatingActionButton: _buildFAB(context),
     );
   }
 
@@ -106,6 +131,7 @@ class ActivitySelectionScreen extends StatelessWidget {
   }
 
   Widget _buildEmptyState(BuildContext context) {
+    final stravaAuth = StravaAuthService();
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(48),
@@ -138,7 +164,7 @@ class ActivitySelectionScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Import a GPX file to create your\nfirst flyover video',
+              'Import a GPX file or share\nan activity from Strava',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
@@ -153,6 +179,48 @@ class ActivitySelectionScreen extends StatelessWidget {
               },
               icon: const Icon(Icons.file_upload_outlined),
               label: const Text('Import GPX File'),
+            ),
+            const SizedBox(height: 12),
+            FutureBuilder<bool>(
+              future: stravaAuth.isAuthenticated,
+              builder: (context, snapshot) {
+                final isConnected = snapshot.data ?? false;
+                if (isConnected) {
+                  return const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle,
+                          size: 16, color: AppTheme.successColor),
+                      SizedBox(width: 6),
+                      Text(
+                        'Strava connected — share an activity from Strava',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return OutlinedButton.icon(
+                  onPressed: stravaAuth.isConfigured
+                      ? () => stravaAuth.authorize()
+                      : null,
+                  icon: const Icon(Icons.link_rounded, size: 18),
+                  label: Text(
+                    stravaAuth.isConfigured
+                        ? 'Connect Strava'
+                        : 'Strava not configured',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFFC4C02),
+                    side: const BorderSide(color: Color(0xFFFC4C02)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -266,7 +334,8 @@ class _RouteCard extends StatelessWidget {
                             const SizedBox(width: 12),
                             _InfoChip(
                               icon: Icons.calendar_today_rounded,
-                              label: DateFormat('MMM d').format(route.startTime!),
+                              label:
+                                  DateFormat('MMM d').format(route.startTime!),
                             ),
                           ],
                         ],

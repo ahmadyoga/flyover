@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../../core/models/route_data.dart';
@@ -42,10 +44,17 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
   _RenderPhase _phase = _RenderPhase.initializing;
   int _capturedFrames = 0;
   int _totalFrames = 0;
+  int _currentFrameIndex = 0;
   String? _outputPath;
   String? _error;
   DateTime? _startTime;
   bool _isCancelled = false;
+
+  /// Widget overlay for ending image slideshow (null = not showing).
+  Widget? _endingImageOverlay;
+
+  /// Number of intro/outro frames to capture for zoom transitions.
+  static const int _zoomTransitionFrames = 60;
 
   // Animation
   late AnimationController _pulseController;
@@ -54,7 +63,8 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
   void initState() {
     super.initState();
 
-    final totalFrameCount = widget.config.videoDurationSeconds * widget.config.fps;
+    final totalFrameCount =
+        widget.config.videoDurationSeconds * widget.config.fps;
 
     _animController = CameraAnimationController(
       routePoints: widget.route.points,
@@ -64,7 +74,8 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
       totalFrameCount: totalFrameCount,
     );
 
-    _totalFrames = _animController.totalFrames;
+    _totalFrames = _animController.totalFrames +
+        (widget.config.endingImagePaths.length * widget.config.fps * 3);
 
     _pulseController = AnimationController(
       vsync: this,
@@ -82,13 +93,31 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
 
       if (_isCancelled) return;
 
-      // Phase 2: Capture and encode frames
+      // Phase 2: Zoom-in intro (captured to video)
       setState(() => _phase = _RenderPhase.capturing);
+      await _captureZoomInIntro();
+
+      if (_isCancelled) return;
+
+      // Phase 3: Capture and encode route frames
       await _captureAndEncodeFrames();
 
       if (_isCancelled) return;
 
-      // Phase 3: Finalize
+      print('Phase 4: Zoom-out outro — reveal full trail and zoom to fit');
+      // Phase 4: Zoom-out outro — reveal full trail and zoom to fit
+      await _captureZoomOutOutro();
+
+      if (_isCancelled) return;
+
+      // Phase 5: Ending image slideshow (if images selected)
+      if (widget.config.endingImagePaths.isNotEmpty) {
+        await _captureEndingSlideshow();
+      }
+
+      if (_isCancelled) return;
+
+      // Phase 5: Finalize
       setState(() => _phase = _RenderPhase.encoding);
       await _renderService.finish();
 
@@ -128,6 +157,9 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
         // Update position marker dot
         await _updatePositionMarker(frame.center.lat, frame.center.lng);
 
+        // Update progressive route trail (reveal from start to current)
+        await _updateRouteTrail(i);
+
         // Wait for map render
         await Future.delayed(const Duration(milliseconds: 80));
       }
@@ -136,26 +168,260 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
       // pixelRatio compensates for the display scaling (widget is shown at 1/4 size)
       final pixelRatio = widget.config.aspectRatio.width.toDouble() /
           (widget.config.aspectRatio.width.toDouble() / 4);
-      final rgbaData = await _captureService.captureFrame(pixelRatio: pixelRatio);
+      final rgbaData =
+          await _captureService.captureFrame(pixelRatio: pixelRatio);
       if (rgbaData != null) {
         await _renderService.appendFrame(rgbaData);
       }
 
       if (mounted) {
-        setState(() => _capturedFrames = i + 1);
+        setState(() {
+          _capturedFrames = i + 1;
+          _currentFrameIndex = i;
+        });
       }
     }
   }
 
-  /// Add route polyline and position marker to the map
+  // ---------------------------------------------------------------------------
+  // Zoom-in intro: smoothly animate from overview to the start point
+  // ---------------------------------------------------------------------------
+  Future<void> _captureZoomInIntro() async {
+    if (_mapboxMap == null || _isCancelled) return;
+
+    _animController.seekToFrame(0);
+    final firstFrame = _animController.getCurrentFrame();
+
+    // Compute overview camera that fits the whole route
+    final overviewCamera = await _getOverviewCamera();
+    final overviewZoom = overviewCamera?.zoom ?? 12.0;
+
+    // Extract overview center lat/lng
+    final overviewCenterPt = overviewCamera?.center;
+    final startLat = overviewCenterPt != null
+        ? overviewCenterPt.coordinates.lat.toDouble()
+        : firstFrame.center.lat;
+    final startLng = overviewCenterPt != null
+        ? overviewCenterPt.coordinates.lng.toDouble()
+        : firstFrame.center.lng;
+
+    final targetZoom = firstFrame.zoom;
+
+    for (int i = 0; i < _zoomTransitionFrames && !_isCancelled; i++) {
+      final t = i / (_zoomTransitionFrames - 1); // 0.0 → 1.0
+      // Ease-in-out cubic
+      final eased = t < 0.5
+          ? 4 * t * t * t
+          : 1 - (-2 * t + 2) * (-2 * t + 2) * (-2 * t + 2) / 2;
+
+      final interpZoom = overviewZoom + (targetZoom - overviewZoom) * eased;
+      final interpPitch = firstFrame.pitch * eased;
+      final interpLat = startLat + (firstFrame.center.lat - startLat) * eased;
+      final interpLng = startLng + (firstFrame.center.lng - startLng) * eased;
+
+      await _mapboxMap!.setCamera(
+        CameraOptions(
+          center: Point(coordinates: Position(interpLng, interpLat)),
+          zoom: interpZoom,
+          pitch: interpPitch,
+          bearing: firstFrame.bearing * eased,
+        ),
+      );
+
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Capture frame
+      final pixelRatio = widget.config.aspectRatio.width.toDouble() /
+          (widget.config.aspectRatio.width.toDouble() / 4);
+      final rgbaData =
+          await _captureService.captureFrame(pixelRatio: pixelRatio);
+      if (rgbaData != null) {
+        await _renderService.appendFrame(rgbaData);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Zoom-out outro: reveal full trail and zoom to fit entire route
+  // ---------------------------------------------------------------------------
+  Future<void> _captureZoomOutOutro() async {
+    if (_mapboxMap == null || _isCancelled) return;
+
+    // Reveal the entire route trail
+    await _updateRouteTrail(_animController.interpolatedPoints.length - 1);
+
+    // Get current camera state (= last animation frame)
+    final lastFrame = _animController.getCurrentFrame();
+
+    // Compute overview camera that fits the whole route
+    final overviewCamera = await _getOverviewCamera();
+    final targetZoom = overviewCamera?.zoom ?? 12.0;
+
+    final overviewCenterPt = overviewCamera?.center;
+    final endLat = overviewCenterPt != null
+        ? overviewCenterPt.coordinates.lat.toDouble()
+        : lastFrame.center.lat;
+    final endLng = overviewCenterPt != null
+        ? overviewCenterPt.coordinates.lng.toDouble()
+        : lastFrame.center.lng;
+
+    for (int i = 0; i < _zoomTransitionFrames && !_isCancelled; i++) {
+      final t = i / (_zoomTransitionFrames - 1); // 0.0 → 1.0
+      // Ease-in-out cubic
+      final eased = t < 0.5
+          ? 4 * t * t * t
+          : 1 - (-2 * t + 2) * (-2 * t + 2) * (-2 * t + 2) / 2;
+
+      final interpZoom = lastFrame.zoom + (targetZoom - lastFrame.zoom) * eased;
+      final interpPitch = lastFrame.pitch + (0.0 - lastFrame.pitch) * eased;
+      final interpBearing = lastFrame.bearing * (1 - eased);
+      final interpLat =
+          lastFrame.center.lat + (endLat - lastFrame.center.lat) * eased;
+      final interpLng =
+          lastFrame.center.lng + (endLng - lastFrame.center.lng) * eased;
+
+      await _mapboxMap!.setCamera(
+        CameraOptions(
+          center: Point(coordinates: Position(interpLng, interpLat)),
+          zoom: interpZoom,
+          pitch: interpPitch,
+          bearing: interpBearing,
+        ),
+      );
+
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Capture frame
+      final pixelRatio = widget.config.aspectRatio.width.toDouble() /
+          (widget.config.aspectRatio.width.toDouble() / 4);
+      final rgbaData =
+          await _captureService.captureFrame(pixelRatio: pixelRatio);
+      if (rgbaData != null) {
+        await _renderService.appendFrame(rgbaData);
+      }
+    }
+    await Future.delayed(const Duration(seconds: 2));
+  }
+
+  /// Capture ending image slideshow — each image shown on a blurred map
+  /// background for ~3 seconds with a subtle scale-up animation.
+  Future<void> _captureEndingSlideshow() async {
+    final imagePaths = widget.config.endingImagePaths;
+    if (imagePaths.isEmpty) return;
+
+    final framesPerImage = widget.config.fps * 3; // 3 seconds per image
+    final pixelRatio = widget.config.aspectRatio.width.toDouble() /
+        (widget.config.aspectRatio.width.toDouble() / 4);
+
+    for (final imagePath in imagePaths) {
+      if (_isCancelled) return;
+
+      for (int frame = 0; frame < framesPerImage; frame++) {
+        if (_isCancelled) return;
+
+        // Scale from 0.95 → 1.0 with ease-out curve
+        final t = frame / framesPerImage;
+        final eased = 1.0 - (1.0 - t) * (1.0 - t); // ease-out quad
+        final scale = 0.95 + 0.05 * eased;
+        // Fade in over first 10 frames
+        final opacity = (frame / 10).clamp(0.0, 1.0);
+
+        setState(() {
+          _endingImageOverlay = Positioned.fill(
+            child: Opacity(
+              opacity: opacity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Blur the map underneath
+                  BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  // The image with scale animation
+                  Center(
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxWidth: widget.config.aspectRatio.width.toDouble() /
+                              4 *
+                              0.8,
+                          maxHeight:
+                              widget.config.aspectRatio.height.toDouble() /
+                                  4 *
+                                  0.7,
+                        ),
+                        child: Image.file(
+                          File(imagePath),
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        });
+
+        await Future.delayed(const Duration(milliseconds: 50));
+
+        final rgbaData =
+            await _captureService.captureFrame(pixelRatio: pixelRatio);
+        if (rgbaData != null) {
+          await _renderService.appendFrame(rgbaData);
+          setState(() {
+            _capturedFrames++;
+          });
+        }
+      }
+    }
+
+    // Clear the overlay after slideshow is done
+    setState(() => _endingImageOverlay = null);
+  }
+
+  /// Get the overview camera that fits the entire route with padding.
+  Future<CameraOptions?> _getOverviewCamera() async {
+    if (_mapboxMap == null || widget.route.points.isEmpty) return null;
+
+    try {
+      double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+      for (final p in widget.route.points) {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lng < minLng) minLng = p.lng;
+        if (p.lng > maxLng) maxLng = p.lng;
+      }
+
+      final bounds = CoordinateBounds(
+        southwest: Point(coordinates: Position(minLng, minLat)),
+        northeast: Point(coordinates: Position(maxLng, maxLat)),
+        infiniteBounds: false,
+      );
+
+      return await _mapboxMap!.cameraForCoordinateBounds(
+        bounds,
+        MbxEdgeInsets(top: 40, left: 40, bottom: 40, right: 40),
+        0, // bearing
+        0, // pitch (top-down for overview)
+        null,
+        null,
+      );
+    } catch (e) {
+      debugPrint('Failed to compute overview camera: $e');
+      return null;
+    }
+  }
+
+  /// Add empty route source + layer and position marker to the map.
+  /// The route trail starts empty and is progressively revealed.
   Future<void> _setupRouteOnMap(MapboxMap map) async {
     if (widget.route.points.isEmpty) return;
 
-    final coordinates = widget.route.points
-        .map((p) => Position(p.lng, p.lat))
-        .toList();
-
-    final lineString = LineString(coordinates: coordinates);
     final color = widget.config.routeColor;
     final colorInt = ((color.a * 255).round() << 24) |
         ((color.r * 255).round() << 16) |
@@ -163,10 +429,13 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
         (color.b * 255).round();
 
     try {
-      // Add route source + layer
+      // Start with an empty GeoJSON line (will be revealed progressively)
+      final emptyLine = LineString(coordinates: [
+        Position(widget.route.points.first.lng, widget.route.points.first.lat),
+      ]);
       await map.style.addSource(GeoJsonSource(
         id: 'route-source',
-        data: json.encode(lineString.toJson()),
+        data: json.encode(emptyLine.toJson()),
       ));
 
       await map.style.addLayer(LineLayer(
@@ -179,7 +448,8 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
       ));
 
       // Create position marker (circle annotation)
-      _positionMarkerManager = await map.annotations.createCircleAnnotationManager();
+      _positionMarkerManager =
+          await map.annotations.createCircleAnnotationManager();
       final startPt = widget.route.points.first;
       await _positionMarkerManager!.create(
         CircleAnnotationOptions(
@@ -190,8 +460,37 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
           circleStrokeWidth: 3.0,
         ),
       );
+
+      // Hide all Mapbox ornaments
+      map.compass.updateSettings(CompassSettings(enabled: false));
+      map.logo.updateSettings(LogoSettings(enabled: false));
+      map.attribution.updateSettings(AttributionSettings(enabled: false));
+      map.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
     } catch (e) {
       debugPrint('Failed to setup route on map: $e');
+    }
+  }
+
+  /// Update the route trail to reveal from start to current frame index.
+  Future<void> _updateRouteTrail(int frameIndex) async {
+    if (_mapboxMap == null) return;
+
+    try {
+      final points = _animController.interpolatedPoints;
+      final endIdx = (frameIndex + 1).clamp(1, points.length);
+
+      final trailCoords =
+          points.sublist(0, endIdx).map((p) => Position(p.lng, p.lat)).toList();
+
+      final lineString = LineString(coordinates: trailCoords);
+
+      await _mapboxMap!.style.setStyleSourceProperty(
+        'route-source',
+        'data',
+        json.encode(lineString.toJson()),
+      );
+    } catch (e) {
+      debugPrint('Failed to update route trail: $e');
     }
   }
 
@@ -213,9 +512,9 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
         CircleAnnotationOptions(
           geometry: Point(coordinates: Position(lng, lat)),
           circleColor: colorInt,
-          circleRadius: 8.0,
+          circleRadius: 5.0,
           circleStrokeColor: 0xFFFFFFFF,
-          circleStrokeWidth: 3.0,
+          circleStrokeWidth: 1.0,
         ),
       );
     } catch (e) {
@@ -266,7 +565,6 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
               _buildAppBar(context),
               // Map for capture (wrapped in RepaintBoundary)
               // Displayed at 1/4 scale; captured at 4x pixelRatio to match encoder resolution
-              // Map is rendered 50px taller (at full res) to push Mapbox watermark below crop area
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
@@ -274,51 +572,51 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
                   height: widget.config.aspectRatio.height.toDouble() / 4,
                   child: RepaintBoundary(
                     key: _captureService.repaintBoundaryKey,
-                    child: ClipRect(
-                      child: SizedBox(
-                        width: widget.config.aspectRatio.width.toDouble() / 4,
-                        height: widget.config.aspectRatio.height.toDouble() / 4,
-                        child: Stack(
-                          children: [
-                            // Map — rendered slightly taller to push watermark below clip
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: -12.5, // 50px at 4x scale = 12.5px at display
-                              child: MapWidget(
-                                cameraOptions: CameraOptions(
-                                  center: Point(
-                                    coordinates: Position(
-                                      widget.route.points.first.lng,
-                                      widget.route.points.first.lat,
-                                    ),
+                    child: SizedBox(
+                      width: widget.config.aspectRatio.width.toDouble() / 4,
+                      height: widget.config.aspectRatio.height.toDouble() / 4,
+                      child: Stack(
+                        children: [
+                          // Map (ornaments hidden via SDK settings)
+                          Positioned.fill(
+                            child: MapWidget(
+                              cameraOptions: CameraOptions(
+                                center: Point(
+                                  coordinates: Position(
+                                    widget.route.points.first.lng,
+                                    widget.route.points.first.lat,
                                   ),
-                                  zoom: widget.config.cameraZoom,
-                                  pitch: widget.config.cameraPitch,
                                 ),
-                                styleUri: widget.config.mapStyle.styleUri,
-                                onMapCreated: (map) {
-                                  _mapboxMap = map;
-                                  // Setup route + position marker, then start rendering
-                                  _setupRouteOnMap(map).then((_) {
-                                    Future.delayed(
-                                      const Duration(seconds: 2),
-                                      () {
-                                        if (mounted) _startRendering();
-                                      },
-                                    );
-                                  });
-                                },
+                                zoom: 11.0, // Start zoomed out (overview)
+                                pitch: 0.0, // Top-down for overview
                               ),
+                              styleUri: widget.config.mapStyle.styleUri,
+                              onMapCreated: (map) {
+                                _mapboxMap = map;
+                                // Setup route + position marker, then start rendering
+                                _setupRouteOnMap(map).then((_) {
+                                  Future.delayed(
+                                    const Duration(seconds: 2),
+                                    () {
+                                      if (mounted) _startRendering();
+                                    },
+                                  );
+                                });
+                              },
                             ),
-                            // Stats overlay on top of map
-                            StatsOverlayWidget(
-                              route: widget.route,
-                              config: widget.config,
-                            ),
-                          ],
-                        ),
+                          ),
+                          // Dynamic stats overlay on top of map
+                          StatsOverlayWidget(
+                            route: widget.route,
+                            config: widget.config,
+                            currentFrameIndex: _currentFrameIndex,
+                            interpolatedPoints:
+                                _animController.interpolatedPoints,
+                            fps: widget.config.fps,
+                          ),
+                          // Ending image overlay (shown during slideshow phase)
+                          if (_endingImageOverlay != null) _endingImageOverlay!,
+                        ],
                       ),
                     ),
                   ),
@@ -326,7 +624,8 @@ class _RenderingProgressScreenState extends State<RenderingProgressScreen>
               ),
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

@@ -6,6 +6,9 @@ class RouteData {
   final List<RoutePoint> points;
   final double totalDistanceMeters;
   final Duration? totalDuration;
+
+  /// Moving duration — total elapsed time minus Strava pause gaps.
+  final Duration? movingDuration;
   final DateTime? startTime;
   final String? sourceFile;
 
@@ -15,6 +18,7 @@ class RouteData {
     required this.points,
     required this.totalDistanceMeters,
     this.totalDuration,
+    this.movingDuration,
     this.startTime,
     this.sourceFile,
   });
@@ -50,6 +54,22 @@ class RouteData {
     return last.difference(first);
   }
 
+  /// Calculate moving duration — total elapsed time minus pause gaps.
+  /// Sums only intervals where the next point is NOT a pause-resume point.
+  static Duration? calculateMovingDuration(List<RoutePoint> points) {
+    if (points.length < 2) return null;
+    int totalMs = 0;
+    for (int i = 1; i < points.length; i++) {
+      final prev = points[i - 1].timestamp;
+      final curr = points[i].timestamp;
+      if (prev != null && curr != null && !points[i].isPauseResume) {
+        totalMs += curr.difference(prev).inMilliseconds;
+      }
+    }
+    if (totalMs <= 0) return null;
+    return Duration(milliseconds: totalMs);
+  }
+
   /// Get formatted distance string
   String get formattedDistance {
     if (totalDistanceMeters >= 1000) {
@@ -71,22 +91,22 @@ class RouteData {
   }
 
   /// Whether this route has elevation data
-  bool get hasElevation =>
-      points.any((p) => p.elevation != null);
+  bool get hasElevation => points.any((p) => p.elevation != null);
 
   /// Whether this route has timing data (needed for pace)
   bool get hasPace =>
-      totalDuration != null && totalDistanceMeters > 0;
+      (movingDuration ?? totalDuration) != null && totalDistanceMeters > 0;
 
   /// Total elevation gain in meters
   double get totalElevationGain => calculateElevationGain(points);
 
-  /// Average pace in min/km (returns null if no timing data)
+  /// Average pace in min/km — uses moving time (excludes pauses)
   double? get averagePaceMinPerKm {
     if (!hasPace) return null;
     final distKm = totalDistanceMeters / 1000;
     if (distKm <= 0) return null;
-    return totalDuration!.inSeconds / 60 / distKm;
+    final dur = movingDuration ?? totalDuration!;
+    return dur.inSeconds / 60 / distKm;
   }
 
   /// Formatted pace string (e.g. "6:52")

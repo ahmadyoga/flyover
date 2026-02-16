@@ -87,6 +87,15 @@ class _MapRenderWidgetState extends State<MapRenderWidget> {
     }
 
     _addRoutePolyline(mapboxMap);
+    _hideMapOrnaments(mapboxMap);
+  }
+
+  /// Hide all Mapbox ornaments: compass, logo, attribution, scale bar.
+  void _hideMapOrnaments(MapboxMap mapboxMap) {
+    mapboxMap.compass.updateSettings(CompassSettings(enabled: false));
+    mapboxMap.logo.updateSettings(LogoSettings(enabled: false));
+    mapboxMap.attribution.updateSettings(AttributionSettings(enabled: false));
+    mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
   }
 
   Future<void> _updateMapStyle(MapboxMap map) async {
@@ -131,9 +140,8 @@ class _MapRenderWidgetState extends State<MapRenderWidget> {
   Future<void> _addRoutePolyline(MapboxMap mapboxMap) async {
     if (widget.routePoints.isEmpty) return;
 
-    final coordinates = widget.routePoints
-        .map((p) => Position(p.lng, p.lat))
-        .toList();
+    final coordinates =
+        widget.routePoints.map((p) => Position(p.lng, p.lat)).toList();
 
     final lineString = LineString(coordinates: coordinates);
     final colorInt = _colorToInt(widget.config.routeColor);

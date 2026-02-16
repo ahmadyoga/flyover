@@ -14,14 +14,34 @@ enum VideoAspectRatio {
 }
 
 enum MapStyle {
-  dark('Dark', 'mapbox://styles/mapbox/dark-v11'),
+  // Mapbox Standard
+  standard('Standard', 'mapbox://styles/mapbox/standard'),
+  standardSatellite(
+      'Standard Satellite', 'mapbox://styles/mapbox/standard-satellite'),
+
+  // Classic
+  streets('Streets', 'mapbox://styles/mapbox/streets-v12'),
+  outdoors('Outdoors', 'mapbox://styles/mapbox/outdoors-v12'),
   light('Light', 'mapbox://styles/mapbox/light-v11'),
-  satellite('Satellite', 'mapbox://styles/mapbox/satellite-streets-v12'),
-  outdoors('Outdoors', 'mapbox://styles/mapbox/outdoors-v12');
+  dark('Dark', 'mapbox://styles/mapbox/dark-v11'),
+  satellite('Satellite', 'mapbox://styles/mapbox/satellite-v9'),
+  satelliteStreets(
+      'Satellite Streets', 'mapbox://styles/mapbox/satellite-streets-v12'),
+  navigationDay('Navigation Day', 'mapbox://styles/mapbox/navigation-day-v1'),
+  navigationNight(
+      'Navigation Night', 'mapbox://styles/mapbox/navigation-night-v1');
 
   final String label;
   final String styleUri;
   const MapStyle(this.label, this.styleUri);
+}
+
+enum SpeedFormat {
+  kmh('km/h'),
+  minPerKm('min/km');
+
+  final String label;
+  const SpeedFormat(this.label);
 }
 
 class VideoConfig extends Equatable {
@@ -35,9 +55,14 @@ class VideoConfig extends Equatable {
   final bool showDistance;
   final bool showPace;
   final bool showElevation;
+  final bool showSpeed;
+  final SpeedFormat speedFormat;
   final int fps;
   final double cameraPitch;
   final double cameraZoom;
+
+  /// Absolute paths of images to display after the route flyover.
+  final List<String> endingImagePaths;
 
   const VideoConfig({
     this.aspectRatio = VideoAspectRatio.portrait9x16,
@@ -50,9 +75,12 @@ class VideoConfig extends Equatable {
     this.showDistance = true,
     this.showPace = true,
     this.showElevation = true,
+    this.showSpeed = true,
+    this.speedFormat = SpeedFormat.kmh,
     this.fps = 30,
     this.cameraPitch = 60.0,
     this.cameraZoom = 15.5,
+    this.endingImagePaths = const [],
   });
 
   VideoConfig copyWith({
@@ -66,9 +94,12 @@ class VideoConfig extends Equatable {
     bool? showDistance,
     bool? showPace,
     bool? showElevation,
+    bool? showSpeed,
+    SpeedFormat? speedFormat,
     int? fps,
     double? cameraPitch,
     double? cameraZoom,
+    List<String>? endingImagePaths,
   }) {
     return VideoConfig(
       aspectRatio: aspectRatio ?? this.aspectRatio,
@@ -81,9 +112,12 @@ class VideoConfig extends Equatable {
       showDistance: showDistance ?? this.showDistance,
       showPace: showPace ?? this.showPace,
       showElevation: showElevation ?? this.showElevation,
+      showSpeed: showSpeed ?? this.showSpeed,
+      speedFormat: speedFormat ?? this.speedFormat,
       fps: fps ?? this.fps,
       cameraPitch: cameraPitch ?? this.cameraPitch,
       cameraZoom: cameraZoom ?? this.cameraZoom,
+      endingImagePaths: endingImagePaths ?? this.endingImagePaths,
     );
   }
 
@@ -99,8 +133,11 @@ class VideoConfig extends Equatable {
         showDistance,
         showPace,
         showElevation,
+        showSpeed,
+        speedFormat,
         fps,
         cameraPitch,
         cameraZoom,
+        endingImagePaths,
       ];
 }

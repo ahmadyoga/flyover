@@ -1,3 +1,5 @@
 {
-  "mapbox_access_token": "YOUR_MAPBOX_ACCESS_TOKEN_HERE"
+  "mapbox_access_token": "YOUR_MAPBOX_ACCESS_TOKEN_HERE",
+  "strava_client_id": "YOUR_STRAVA_CLIENT_ID_HERE",
+  "strava_client_secret": "YOUR_STRAVA_CLIENT_SECRET_HERE"
 }

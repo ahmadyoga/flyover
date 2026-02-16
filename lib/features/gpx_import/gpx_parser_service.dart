@@ -71,8 +71,12 @@ class GpxParserService {
         throw GpxParseException('No valid GPS points found in GPX file');
       }
 
+      // Detect Strava pauses: mark points after a time gap > threshold
+      _markPauseResumes(points);
+
       final distance = RouteData.calculateTotalDistance(points);
       final duration = RouteData.calculateTotalDuration(points);
+      final movingDuration = RouteData.calculateMovingDuration(points);
 
       return RouteData(
         id: _uuid.v4(),
@@ -80,6 +84,7 @@ class GpxParserService {
         points: points,
         totalDistanceMeters: distance,
         totalDuration: duration,
+        movingDuration: movingDuration,
         startTime: points.first.timestamp,
         sourceFile: sourceFile,
       );
@@ -97,4 +102,28 @@ class GpxParseException implements Exception {
 
   @override
   String toString() => 'GpxParseException: $message';
+}
+
+/// Detect Strava pauses by finding time gaps > threshold between consecutive
+/// trackpoints. The point immediately after the gap is rebuilt with
+/// [RoutePoint.isPauseResume] set to `true`.
+void _markPauseResumes(
+  List<RoutePoint> points, {
+  Duration threshold = const Duration(seconds: 15),
+}) {
+  for (int i = 1; i < points.length; i++) {
+    final prev = points[i - 1].timestamp;
+    final curr = points[i].timestamp;
+    if (prev != null && curr != null) {
+      if (curr.difference(prev) > threshold) {
+        points[i] = RoutePoint(
+          lat: points[i].lat,
+          lng: points[i].lng,
+          elevation: points[i].elevation,
+          timestamp: points[i].timestamp,
+          isPauseResume: true,
+        );
+      }
+    }
+  }
 }
