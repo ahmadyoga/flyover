@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../../core/models/route_data.dart';
@@ -883,17 +883,13 @@ class _VideoCustomizationScreenState extends State<VideoCustomizationScreen> {
     final remaining = 5 - _config.endingImagePaths.length;
     if (remaining <= 0) return;
 
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      allowMultiple: true,
+    final picker = ImagePicker();
+    final images = await picker.pickMultiImage(
+      limit: remaining,
     );
 
-    if (result != null && result.files.isNotEmpty) {
-      final newPaths = result.files
-          .where((f) => f.path != null)
-          .map((f) => f.path!)
-          .take(remaining)
-          .toList();
+    if (images.isNotEmpty) {
+      final newPaths = images.take(remaining).map((f) => f.path).toList();
       final updated = [..._config.endingImagePaths, ...newPaths];
       setState(
         () => _config = _config.copyWith(endingImagePaths: updated),

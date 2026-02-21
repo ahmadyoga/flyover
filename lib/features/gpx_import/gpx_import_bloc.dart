@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/models/route_data.dart';
+import '../../core/algorithms/pause_filter.dart';
 import '../../core/algorithms/route_simplifier.dart';
 import '../strava/strava_api_service.dart';
 import 'gpx_parser_service.dart';
@@ -127,7 +128,10 @@ class GpxImportBloc extends Bloc<GpxImportEvent, GpxImportState> {
 
       final routeData = await _parserService.parseFile(filePath);
 
-      // Simplify the route to reduce noise
+      // Calculate moving duration (total time minus pause gaps)
+      final movingDuration = PauseFilter.calculateMovingDuration(routeData.points);
+
+      // Simplify the route to reduce noise (keep all points for distance)
       final simplifiedPoints = RouteSimplifier.simplify(
         routeData.points,
         epsilon: 3.0,
@@ -139,6 +143,7 @@ class GpxImportBloc extends Bloc<GpxImportEvent, GpxImportState> {
         points: simplifiedPoints,
         totalDistanceMeters: routeData.totalDistanceMeters,
         totalDuration: routeData.totalDuration,
+        movingDuration: movingDuration,
         startTime: routeData.startTime,
         sourceFile: routeData.sourceFile,
       );
@@ -166,6 +171,8 @@ class GpxImportBloc extends Bloc<GpxImportEvent, GpxImportState> {
 
       final routeData = await _parserService.parseFile(event.filePath);
 
+      final movingDuration = PauseFilter.calculateMovingDuration(routeData.points);
+
       final simplifiedPoints = RouteSimplifier.simplify(
         routeData.points,
         epsilon: 3.0,
@@ -177,6 +184,7 @@ class GpxImportBloc extends Bloc<GpxImportEvent, GpxImportState> {
         points: simplifiedPoints,
         totalDistanceMeters: routeData.totalDistanceMeters,
         totalDuration: routeData.totalDuration,
+        movingDuration: movingDuration,
         startTime: routeData.startTime,
         sourceFile: routeData.sourceFile,
       );
@@ -224,6 +232,9 @@ class GpxImportBloc extends Bloc<GpxImportEvent, GpxImportState> {
       final routeData =
           await _stravaService.fetchActivityAsRoute(event.activityId);
 
+      final movingDuration = PauseFilter.calculateMovingDuration(routeData.points)
+          ?? routeData.movingDuration;
+
       // Simplify the route to reduce noise
       final simplifiedPoints = RouteSimplifier.simplify(
         routeData.points,
@@ -236,7 +247,7 @@ class GpxImportBloc extends Bloc<GpxImportEvent, GpxImportState> {
         points: simplifiedPoints,
         totalDistanceMeters: routeData.totalDistanceMeters,
         totalDuration: routeData.totalDuration,
-        movingDuration: routeData.movingDuration,
+        movingDuration: movingDuration,
         startTime: routeData.startTime,
         sourceFile: routeData.sourceFile,
       );
